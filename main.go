@@ -17,6 +17,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"flag"
+	"fmt"
 	"log"
 	"math/big"
 	"net"
@@ -26,7 +27,7 @@ import (
 )
 
 var (
-	host       = flag.String("host", "127.0.0.1", "Comma-separated hostnames and IPs to generate a certificate for")
+	host       = flag.String("host", "", "Comma-separated hostnames and IPs to generate a certificate for")
 	validFrom  = flag.String("start-date", "", "Creation date formatted as Jan 1 15:04:05 2011")
 	validFor   = flag.Duration("duration", 365*24*time.Hour, "Duration that certificate is valid for")
 	isCA       = flag.Bool("ca", false, "whether this cert should be its own Certificate Authority")
@@ -35,6 +36,7 @@ var (
 	ed25519Key = flag.Bool("ed25519", false, "Generate an Ed25519 key")
 	parentcert = flag.String("cacert", "", "The CA certificate")
 	cakey      = flag.String("cakey", "", "The CA certificate key")
+	name       = flag.String("name", "299m", "The DN name")
 )
 
 func publicKey(priv any) any {
@@ -112,7 +114,7 @@ func main() {
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
-			Organization: []string{"Acme Co"},
+			Organization: []string{*name},
 		},
 		NotBefore: notBefore,
 		NotAfter:  notAfter,
@@ -137,7 +139,9 @@ func main() {
 	}
 
 	parent := &template
+	parentkey := priv
 	if *parentcert != "" {
+		fmt.Println("Using parent certificate ", *parentcert)
 		/// Load the ca-cert.pem and ca-key.pem
 		caCert, err := os.ReadFile(*parentcert)
 		if err != nil {
@@ -158,15 +162,14 @@ func main() {
 			log.Panic("Failed to decode parent certificate key")
 
 		}
-		parentKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		parentkey, err = x509.ParsePKCS8PrivateKey(block.Bytes)
 		if err != nil {
 			log.Panic("Failed to parse parent certificate key: %v", err)
 
 		}
-		priv = parentKey
 	}
 
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, parent, publicKey(priv), priv)
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, parent, publicKey(priv), parentkey)
 	if err != nil {
 		log.Fatalf("Failed to create certificate: %v", err)
 	}
@@ -186,7 +189,7 @@ func main() {
 	if err := certOut.Close(); err != nil {
 		log.Fatalf("Error closing cert.pem: %v", err)
 	}
-	log.Print("wrote cert.pem\n")
+	log.Println("wrote ", certname)
 
 	keyname := "key.pem"
 	if *isCA {
@@ -207,5 +210,5 @@ func main() {
 	if err := keyOut.Close(); err != nil {
 		log.Fatalf("Error closing key.pem: %v", err)
 	}
-	log.Print("wrote key.pem\n")
+	log.Println("wrote ", keyname)
 }
